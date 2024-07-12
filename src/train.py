@@ -6,6 +6,7 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.transforms import functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
+import mlflow
 
 class PIDrayDataset(Dataset):
     def __init__(self, root_dir, annotation_file, transform=None):
@@ -48,36 +49,41 @@ def main():
     data_dir = "../data/pidray/train"
     annotation_file = "../data/pidray/annotations/xray_train.json"
 
+    #set up tracking directory
+    mlflow.set_tracking_uri(os.path.join(os.path.dirname(__file__), "..","mlruns"))
+    #mlflow.set_experiment()
+    mlflow.autolog()
+    with mlflow.start_run():
     # Load dataset
-    dataset = PIDrayDataset(data_dir, annotation_file, transform=F.to_tensor)
-    
-    # Select few images
-    dataset = torch.utils.data.Subset(dataset, range(6))
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
+        dataset = PIDrayDataset(data_dir, annotation_file, transform=F.to_tensor)
+        
+        # Select few images
+        dataset = torch.utils.data.Subset(dataset, range(6))
+        dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
 
-    # Load pre-trained model
-    model = fasterrcnn_resnet50_fpn(pretrained=True)
-    model.train()
+        # Load pre-trained model
+        model = fasterrcnn_resnet50_fpn(pretrained=True)
+        model.train()
 
-    # Optimizer
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=0.005, momentum=0.9, weight_decay=0.0005)
+        # Optimizer
+        params = [p for p in model.parameters() if p.requires_grad]
+        optimizer = torch.optim.SGD(params, lr=0.005, momentum=0.9, weight_decay=0.0005)
 
-    # Training loop
-    num_epochs = 3
-    for epoch in range(num_epochs):
-        for images, targets in dataloader:
-            images = list(image for image in images)
-            targets = [{k: v for k, v in t.items()} for t in targets]
+        # Training loop
+        num_epochs = 3
+        for epoch in range(num_epochs):
+            for images, targets in dataloader:
+                images = list(image for image in images)
+                targets = [{k: v for k, v in t.items()} for t in targets]
 
-            loss_dict = model(images, targets)
-            losses = sum(loss for loss in loss_dict.values())
+                loss_dict = model(images, targets)
+                losses = sum(loss for loss in loss_dict.values())
 
-            optimizer.zero_grad()
-            losses.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                losses.backward()
+                optimizer.step()
 
-            print(f"Epoch: {epoch}, Loss: {losses.item()}")
+                print(f"Epoch: {epoch}, Loss: {losses.item()}")
 
 if __name__ == "__main__":
     main()

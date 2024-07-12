@@ -17,7 +17,7 @@ output_zip = output_dir / 'pidray.zip'
 print(output_zip.absolute())
 
 # Download the file
-# gdown.download(url, str(output_zip), quiet=False)
+gdown.download(url, str(output_zip), quiet=False)
 
 # Extract the zip file
 with zipfile.ZipFile(output_zip, 'r') as zip_ref:
