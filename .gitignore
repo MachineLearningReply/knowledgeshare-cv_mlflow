@@ -6,6 +6,8 @@ __pycache__/
 myenv
 mlruns
 mlartifacts
+model_artifacts
+*.pt
 # C extensions
 *.so
 
