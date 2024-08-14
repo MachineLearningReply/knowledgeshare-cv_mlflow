@@ -167,3 +167,6 @@ cython_debug/
 #.idea/
 
 data/
+wandb/
+tensorboard_logs/
+.gitignore
