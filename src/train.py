@@ -9,8 +9,10 @@ import mlflow
 from mlflow.models import infer_signature
 import numpy as np
 from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
+import wandb
 
-EXPERIMENT_NAME = "pidray_experiment_1"
+EXPERIMENT_NAME = "pidray_experiment_2"
 NUM_EPOCHS = 6
 NUM_IMAGES = 6
 DATA_DIR = Path("data/pidray/train")
@@ -20,8 +22,13 @@ FILE_LOCATION = Path(__file__)
 REPO_ROOT = FILE_LOCATION.parents[1]
 TRACKING_URI = f"file://{REPO_ROOT / 'mlruns'}"
 
-
 def main():
+    # Setup TensorBoard 
+    writer = SummaryWriter(log_dir=str(REPO_ROOT / 'tensorboard_logs'))
+
+    # Setup Weights & Biases
+    wandb.init(project="pidray_experiment", config={"epochs": NUM_EPOCHS})
+
     # Setup MLFlow
     mlflow.set_tracking_uri(TRACKING_URI)
     setup_experiment(EXPERIMENT_NAME)
@@ -76,17 +83,13 @@ def main():
 
                 num_batches += 1
 
-                # Log batch loss and accuracy
-                mlflow.log_metric(
-                    "batch_loss",
-                    losses.item(),
-                    step=epoch * len(dataloader) + num_batches,
-                )
-                mlflow.log_metric(
-                    "batch_accuracy",
-                    batch_accuracy,
-                    step=epoch * len(dataloader) + num_batches,
-                )
+                # Log batch loss and accuracy to MLflow, TensorBoard, and W&B
+                step = epoch * len(dataloader) + num_batches
+                mlflow.log_metric("batch_loss", losses.item(), step=step)
+                mlflow.log_metric("batch_accuracy", batch_accuracy, step=step)
+                writer.add_scalar("Loss/Batch", losses.item(), step)
+                writer.add_scalar("Accuracy/Batch", batch_accuracy, step)
+                wandb.log({"batch_loss": losses.item(), "batch_accuracy": batch_accuracy, "step": step})
 
                 model.train()  # Switch back to training mode
 
@@ -97,6 +100,9 @@ def main():
 
             mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
             mlflow.log_metric("epoch_accuracy", epoch_accuracy, step=epoch)
+            writer.add_scalar("Loss/Epoch", epoch_loss, epoch)
+            writer.add_scalar("Accuracy/Epoch", epoch_accuracy, epoch)
+            wandb.log({"epoch_loss": epoch_loss, "epoch_accuracy": epoch_accuracy, "epoch": epoch})
 
         # Save the trained model's state_dict to a .pt file
         model_path = REPO_ROOT / "model_weights.pt"
@@ -104,6 +110,7 @@ def main():
 
         # Log the .pt file as an artifact
         mlflow.log_artifact(model_path)
+        wandb.save(str(model_path))
 
         # Example input and output for inference signature
         example_input = next(iter(dataloader))[0]  # Get a batch of images
@@ -127,6 +134,10 @@ def main():
         mlflow.pytorch.log_model(model, "model", signature=signature)
         mlflow.log_artifact(FILE_LOCATION)
         mlflow.log_artifact(REPO_ROOT / "requirements.txt")
+
+        # Close TensorBoard writer
+        writer.close()
+
 
 
 class PIDrayDataset(Dataset):
