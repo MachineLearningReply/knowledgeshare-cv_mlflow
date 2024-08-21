@@ -2,12 +2,11 @@ from PIL import Image
 from torchvision.transforms import functional as F
 import mlflow
 import torch
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from pathlib import Path
 
 # Set up paths
 MODEL_NAME = "pidray1"
-MODEL_VERSION = 1  # Specify the version of the model you want to load
+MODEL_VERSION = 1  
 TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy00000.png"
 
 # Load the model from the MLflow Model Registry
