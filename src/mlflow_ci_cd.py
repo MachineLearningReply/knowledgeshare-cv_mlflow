@@ -1,7 +1,6 @@
 import time
 import mlflow
 import torch
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from PIL import Image
 from torchvision.transforms import functional as F
 from pathlib import Path
@@ -9,7 +8,7 @@ from pathlib import Path
 # Set up paths
 MODEL_NAME = "pidray1"
 CURRENT_VERSION = None  # Start with no version loaded
-TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy09283.png"
+TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy00000.png"
 
 def load_and_deploy_model(version):
     print(f"[INFO] Loading and deploying model version {version}...")

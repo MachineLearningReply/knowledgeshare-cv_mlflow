@@ -10,7 +10,7 @@ from pathlib import Path
 RUN_ID = "7822b622cb414464a25d38f053412d51"
 DOWNLOAD_DIR = Path("./model_artifacts")
 MODEL_WEIGHTS_NAME = "model_weights.pt"
-TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy09283.png"
+TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy00000.png"
 
 # Download the artifact to a local directory
 mlflow.artifacts.download_artifacts(
