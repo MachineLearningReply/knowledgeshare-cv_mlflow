@@ -9,14 +9,19 @@ import mlflow
 from mlflow.models import infer_signature
 import numpy as np
 from pathlib import Path
+import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 import wandb
+from visualize import plot_image_with_boxes
+import torchmetrics
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 EXPERIMENT_NAME = "pidray_experiment_2"
 NUM_EPOCHS = 6
 NUM_IMAGES = 6
 DATA_DIR = Path("data/pidray/train")
 ANNOTATION_FILE = "data/pidray/annotations/xray_train.json"
+LOG_FREQUENCY = 1 #frequency to which you log the larger items
 
 FILE_LOCATION = Path(__file__) 
 REPO_ROOT = FILE_LOCATION.parents[1]
@@ -55,7 +60,9 @@ def main():
         # Training loop
         for epoch in range(NUM_EPOCHS):
             epoch_loss = 0.0
-            epoch_accuracy = 0.0
+            epoch_mAP = 0.0
+            epoch_recall_50 = 0.0
+            epoch_precision_50 = 0.0
             num_batches = 0
 
             for images, targets in dataloader:
@@ -74,35 +81,84 @@ def main():
                 # Update loss
                 epoch_loss += losses.item()
 
-                # Compute accuracy
+                # Compute metrics using the updated function
                 model.eval()  # Switch to evaluation mode to avoid affecting gradients
                 with torch.no_grad():
                     outputs = model(images)
-                batch_accuracy = compute_accuracy(outputs, targets)
-                epoch_accuracy += batch_accuracy
+                mAP, recall_50, precision_50 = compute_metrics(outputs, targets)
+                epoch_mAP += mAP
+                epoch_recall_50 += recall_50
+                epoch_precision_50 += precision_50
 
                 num_batches += 1
 
-                # Log batch loss and accuracy to MLflow, TensorBoard, and W&B
+                # Log batch loss and metrics to MLflow, TensorBoard, and W&B
                 step = epoch * len(dataloader) + num_batches
                 mlflow.log_metric("batch_loss", losses.item(), step=step)
-                mlflow.log_metric("batch_accuracy", batch_accuracy, step=step)
+                mlflow.log_metric("batch_mAP", mAP, step=step)
+                mlflow.log_metric("batch_recall_50", recall_50, step=step)
+                mlflow.log_metric("batch_precision_50", precision_50, step=step)
                 writer.add_scalar("Loss/Batch", losses.item(), step)
-                writer.add_scalar("Accuracy/Batch", batch_accuracy, step)
-                wandb.log({"batch_loss": losses.item(), "batch_accuracy": batch_accuracy, "step": step})
+                writer.add_scalar("mAP/Batch", mAP, step)
+                writer.add_scalar("Recall@0.5/Batch", recall_50, step)
+                writer.add_scalar("Precision@0.5/Batch", precision_50, step)
+                wandb.log({
+                    "batch_loss": losses.item(),
+                    "batch_mAP": mAP,
+                    "batch_recall_50": recall_50,
+                    "batch_precision_50": precision_50,
+                    "step": step
+                })
 
                 model.train()  # Switch back to training mode
 
             # Calculate and log epoch metrics
             epoch_loss /= num_batches
-            epoch_accuracy /= num_batches
-            print(f"Epoch: {epoch}, Loss: {epoch_loss}, Accuracy: {epoch_accuracy}")
+            epoch_mAP /= num_batches
+            epoch_recall_50 /= num_batches
+            epoch_precision_50 /= num_batches
+
+            print(f"Epoch: {epoch}, Loss: {epoch_loss}, mAP: {epoch_mAP}, Recall@0.5: {epoch_recall_50}, Precision@0.5: {epoch_precision_50}")
 
             mlflow.log_metric("epoch_loss", epoch_loss, step=epoch)
-            mlflow.log_metric("epoch_accuracy", epoch_accuracy, step=epoch)
+            mlflow.log_metric("epoch_mAP", epoch_mAP, step=epoch)
+            mlflow.log_metric("epoch_recall_50", epoch_recall_50, step=epoch)
+            mlflow.log_metric("epoch_precision_50", epoch_precision_50, step=epoch)
             writer.add_scalar("Loss/Epoch", epoch_loss, epoch)
-            writer.add_scalar("Accuracy/Epoch", epoch_accuracy, epoch)
-            wandb.log({"epoch_loss": epoch_loss, "epoch_accuracy": epoch_accuracy, "epoch": epoch})
+            writer.add_scalar("mAP/Epoch", epoch_mAP, epoch)
+            writer.add_scalar("Recall@0.5/Epoch", epoch_recall_50, epoch)
+            writer.add_scalar("Precision@0.5/Epoch", epoch_precision_50, epoch)
+            wandb.log({
+                "epoch_loss": epoch_loss,
+                "epoch_mAP": epoch_mAP,
+                "epoch_recall_50": epoch_recall_50,
+                "epoch_precision_50": epoch_precision_50,
+                "epoch": epoch
+            })
+
+            if (epoch + 1) % LOG_FREQUENCY == 0:
+                model.eval()  # Ensure the model is in evaluation mode
+                with torch.no_grad():
+                    sample_image_for_inference, sample_target = dataset[0]  # Get a sample image
+                    sample_image_for_inference = sample_image_for_inference.unsqueeze(0)  # Add batch dimension
+                    output = model(sample_image_for_inference)[0]
+
+                # Plot the image with predicted bounding boxes
+                fig, ax = plt.subplots(1, figsize=(12, 8))
+                plot_image_with_boxes(sample_image_for_inference[0], output['boxes'], output['labels'], ax=ax)
+                
+                # Save the figure to a temporary file
+                inference_image_path = REPO_ROOT / f"inference_epoch_{epoch + 1}.png"
+                fig.savefig(inference_image_path, bbox_inches="tight")
+                plt.close(fig)
+
+                numpy_image = plt.imread(inference_image_path)
+                if numpy_image.ndim == 3 and numpy_image.shape[2] == 4:
+                    numpy_image = numpy_image[:, :, :3] 
+                writer.add_image("Inference Image", numpy_image, global_step=epoch, dataformats='HWC')
+                wandb.log({"inference_image": wandb.Image(numpy_image)})
+                mlflow.log_image(Image.open(inference_image_path), artifact_file=f"inference_image_{epoch}.png")
+                model.train()
 
         # Save the trained model's state_dict to a .pt file
         model_path = REPO_ROOT / "model_weights.pt"
@@ -192,30 +248,25 @@ def setup_experiment(experiment_name):
     mlflow.set_experiment(experiment_name)
 
 
-def compute_accuracy(outputs, targets, iou_threshold=0.5):
-    correct = 0
-    total = 0
+def compute_metrics(outputs, targets):
+    # Initialize the metric
+    metric = MeanAveragePrecision(iou_type="bbox")
 
-    for output, target in zip(outputs, targets):
-        pred_boxes = output["boxes"].cpu()
-        pred_labels = output["labels"].cpu()
-        true_boxes = target["boxes"].cpu()
-        true_labels = target["labels"].cpu()
+    # Update the metric with outputs and targets
+    metric.update(outputs, targets)
 
-        if len(pred_boxes) == 0 or len(true_boxes) == 0:
-            continue
+    # Compute the results
+    results = metric.compute()
 
-        ious = box_iou(pred_boxes, true_boxes)
-        matched_indices = ious.max(dim=1).indices
+    # Extract relevant metrics
+    mAP = results['map'].item()  # Global mean average precision
+    recall_50 = results['mar_1'].item()  # Mean average recall with max 1 detection per image, often used at IoU=0.5
+    precision_50 = results['map_50'].item()  # Mean average precision at IoU=0.5
 
-        for i, pred_label in enumerate(pred_labels):
-            if ious[i, matched_indices[i]] >= iou_threshold:
-                if pred_label == true_labels[matched_indices[i]]:
-                    correct += 1
+    return mAP, recall_50, precision_50
 
-        total += len(true_labels)
 
-    return correct / total if total > 0 else 0
+
 
 
 if __name__ == "__main__":

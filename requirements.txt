@@ -22,3 +22,7 @@ tqdm==4.66.4
 typing_extensions==4.12.2
 urllib3==2.2.2
 mlflow
+tensorboard
+wandb
+torchmetrics
+torchmetrics[detection]

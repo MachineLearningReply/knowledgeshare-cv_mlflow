@@ -8,7 +8,7 @@ from pathlib import Path
 # Set up paths
 MODEL_NAME = "pidray1"
 MODEL_VERSION = 1  # Specify the version of the model you want to load
-TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy09283.png"
+TEST_IMAGE = Path("data") / "pidray" / "easy" / "xray_easy00000.png"
 
 # Load the model from the MLflow Model Registry
 model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
