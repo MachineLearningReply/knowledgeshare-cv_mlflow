@@ -15,9 +15,10 @@ import wandb
 from visualize import plot_image_with_boxes
 import torchmetrics
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from datetime import datetime
 
 EXPERIMENT_NAME = "pidray_experiment_2"
-NUM_EPOCHS = 6
+NUM_EPOCHS = 2
 NUM_IMAGES = 6
 DATA_DIR = Path("data/pidray/train")
 ANNOTATION_FILE = "data/pidray/annotations/xray_train.json"
@@ -29,7 +30,8 @@ TRACKING_URI = f"file://{REPO_ROOT / 'mlruns'}"
 
 def main():
     # Setup TensorBoard 
-    writer = SummaryWriter(log_dir=str(REPO_ROOT / 'tensorboard_logs'))
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    writer = SummaryWriter(log_dir=str(REPO_ROOT / 'tensorboard_logs'/f'run{timestamp}'))
 
     # Setup Weights & Biases
     wandb.init(project="pidray_experiment", config={"epochs": NUM_EPOCHS})
